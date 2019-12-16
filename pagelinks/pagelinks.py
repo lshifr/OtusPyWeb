@@ -22,7 +22,7 @@ def page_links(url, max_links=100, max_depth=5, recursive=True):
 
     def crawl(url, current_depth):
         if current_depth > max_depth or len(found_links) >= max_links:
-            # Stop if we have enough links already, or if recursion got too deep
+            # Stop if we have enough links already, or if recursion is too deep
             return None
         html = make_request(url)
         for link in get_links(html):

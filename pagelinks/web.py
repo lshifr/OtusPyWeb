@@ -22,7 +22,7 @@ def make_request(url):
     """
     Encapsulates the logic of making a request.
     :param url: A url string
-    :return: A string with response test if response status code is 200, and None otherwise
+    :return: A string with response text if response status code is 200, and None otherwise
     """
     try:
         if not is_valid_link(url):
