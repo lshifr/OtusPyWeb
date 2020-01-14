@@ -1,5 +1,5 @@
 from console import RectangularFigure, Row, Column, VerticalSeparator, HorizontalSeparator, \
-    Digit, VerticalPadding, PaddableRow, TextLine, Text, HorizontalAlignment,PaddableColumn, \
+    Digit, VerticalPadding, PaddableRow, TextLine, Text, HorizontalAlignment, PaddableColumn, \
     RectangularBuildingBlock, HorizontalPadding
 import random
 from operator import itemgetter
@@ -40,7 +40,7 @@ class UsedCardNumber(CardNumber):
         compiled = super().compile(height=height, width=width)
         return list(map(
             lambda row: list(map(
-                lambda elem: elem if elem != ' ' else "/",
+                lambda elem: elem if elem != ' ' else "-",
                 row
             )),
             compiled
@@ -63,10 +63,14 @@ class Messages(RectangularBuildingBlock):
             VerticalSeparator("="),
             Row(
                 HorizontalSeparator("="),
-                Text(
-                    [" "] + self.messages + [" "],
-                    hor_align=HorizontalAlignment.LEFT
-                ),
+                HorizontalPadding(
+                    Text(
+                        [" "] + self.messages + [" "],
+                        hor_align=HorizontalAlignment.LEFT
+                    ),
+                    30
+                )
+                ,
                 HorizontalSeparator("=")
             ),
             VerticalSeparator("="),
@@ -102,13 +106,19 @@ class Card(RectangularBuildingBlock):
         assert 0 < position <= len(self.numbers)
         self.used.add(self.numbers[position - 1])
 
-    def unmark_position(self, position:int):
+    def unmark_position(self, position: int):
         assert 0 < position <= len(self.numbers)
         self.used.remove(self.numbers[position - 1])
 
     def mark_used_number_if_present(self, num: int):
         if num in self.numbers:
             self.used.add(num)
+
+    def get_unmarked(self):
+        return set(self.numbers) - self.used
+
+    def is_complete(self):
+        return not bool(self.get_unmarked())
 
 
 MAX_NUMBER = 15
@@ -124,7 +134,7 @@ class Dealer(object):
         self.used = set()
 
     def deal_card(self):
-        return Card(self, random.choices(range(1, MAX_NUMBER), k=self.card_size))
+        return Card(self, random.sample(range(1, MAX_NUMBER), self.card_size))
 
     def next_number(self):
         if not self.available:
@@ -135,7 +145,7 @@ class Dealer(object):
         return num
 
     def check_card(self, card: Card):
-        return bool(card.used - self.used)
+        return not bool(card.used - self.used)
 
 
 USER_NAMES = (
@@ -164,10 +174,10 @@ class User(RectangularBuildingBlock):
     def mark_used_position(self, position):
         self.card.mark_used_position(position)
         self.game.handle_user_action({
-            "action":"MARK_POSITION",
+            "action": "MARK_POSITION",
             "user": self,
             "card": self.card,
-            "position" : position
+            "position": position
         })
 
     def get_current_figure(self, height=None, width=None):
@@ -185,6 +195,14 @@ DEFAULT_CARD_SIZE = 5
 DEFAULT_PLAYERS = 4
 
 
+def is_int_str(string):
+    try:
+        int(string)
+        return True
+    except ValueError:
+        return False
+
+
 class Lotto(RectangularBuildingBlock):
     def __init__(
             self,
@@ -196,10 +214,11 @@ class Lotto(RectangularBuildingBlock):
     ):
         super().__init__(*args, **kwargs)
         self.dealer = Dealer(card_size)
-        self.others = [User(n, self) for n in random.sample(USER_NAMES, players-1)]
+        self.others = [User(n, self) for n in random.sample(USER_NAMES, players - 1)]
         self.you = User(name, self)
         self.messages = Messages()
         self.done = False
+        self.last_played = None
         all_users = self.others + [self.you]
         for user in all_users:
             user.get_card(self.dealer)
@@ -208,7 +227,7 @@ class Lotto(RectangularBuildingBlock):
         components = [*self.others, self.you]
         if self.messages.messages:
             components.append(self.messages)
-        return PaddableColumn(*components)
+        return PaddableColumn(*components, hor_align=HorizontalAlignment.LEFT)
 
     def repaint(self):
         cls()
@@ -218,13 +237,15 @@ class Lotto(RectangularBuildingBlock):
     def request_new_number(self):
         num = self.dealer.next_number()
         if num is None:
-            self.messages.add_message("No numbers left. Game over!")
+            self.messages.add_message("No numbers left to play. Game over!")
             self.done = True
         else:
+            self.last_played = num
             for player in self.others:
                 player.mark_used_number_if_present(num)
             self.messages.add_message("New number is %d" % num)
         self.repaint()
+        self.detect_winners()
 
     def handle_user_action(self, action):
         action_type, user = itemgetter("action", "user")(action)
@@ -235,8 +256,31 @@ class Lotto(RectangularBuildingBlock):
                 card.unmark_position(position)
         self.repaint()
 
+    def detect_winners(self):
+        winners = [user for user in self.others + [self.you] if user.card.is_complete()]
+        if not winners:
+            return
+        if self.you not in winners and not bool(self.you.card.get_unmarked() - set([self.last_played])):
+            return  # You still can join the winners by marking your last unmarked number
+        self.done = True
+        if len(winners) == 1:
+            self.messages.add_message("The winner is %s" % winners[0].name)
+        else:
+            self.messages.add_message("The winners are:")
+            for w in winners:
+                self.messages.add_message(w.name)
+        self.messages.add_message("Game over!")
+        self.repaint()
+
     def mark_position(self, position):
         self.you.mark_used_position(position)
+        self.detect_winners()
+
+    def remind_last_number(self):
+        msg = ("No number was played yet" if self.last_played is None
+               else ("Last number played was %d" % self.last_played))
+        self.messages.add_message(msg)
+        self.repaint()
 
     def quit(self):
         self.messages.add_message("The game stopped at user's request")
@@ -249,15 +293,18 @@ class Lotto(RectangularBuildingBlock):
             val = input(
                 """Enter choice:
                  n - get next number
-                 1, 2, 3, 4, or 5 - mark position as present on your card
+                 p - remind last played number
+                 1, 2, 3, 4, ... - mark position as present on your card
                  q - quit the game
                  \n
                  """
             )
             if val == 'n':
                 self.request_new_number()
-            elif val in ['1', '2', '3', '4', '5']:
+            elif is_int_str(val):
                 self.mark_position(int(val))
+            elif val == 'p':
+                self.remind_last_number()
             elif val == 'q':
                 self.quit()
             else:
@@ -265,7 +312,4 @@ class Lotto(RectangularBuildingBlock):
                 self.repaint()
 
 
-
 Lotto().start_game()
-
-
