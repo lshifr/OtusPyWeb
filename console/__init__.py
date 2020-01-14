@@ -1,5 +1,5 @@
-from .core import Row, Column, RectangularFigure, VerticalAlignment, HorizontalAlignment, \
-    RectangularBuildingBlock
+from .core import *
 from .digits import Digit
-from .separators import VerticalSeparator, HorizontalSeparator, VerticalPadding, \
-    PaddableColumn, PaddableRow, TextLine, Text, HorizontalPadding
+from .separators import *
+
+# Модуль реализует простую блочную модель документа для консоли
